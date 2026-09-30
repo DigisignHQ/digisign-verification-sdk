@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "DigiSign Verification Example",
+    "slug": "digisign-verification-example",
+    "version": "0.1.0",
+    "scheme": "com.digisign.verification.example",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "plugins": [
+      [
+        "react-native-permissions",
+        {
+          "iosPermissions": ["Camera", "Microphone"]
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.digisign.verification.example",
+      "infoPlist": {
+        "NSCameraUsageDescription": "DigiSign needs camera access for identity verification.",
+        "NSMicrophoneUsageDescription": "DigiSign needs microphone access for video verification."
+      }
+    },
+    "android": {
+      "package": "com.digisign.verification.example",
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
+    }
+  }
+}

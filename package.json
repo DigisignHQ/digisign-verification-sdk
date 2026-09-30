@@ -1,0 +1,17 @@
+{
+  "name": "@digisign/verification-sdk",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.4.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @digisign/react-native-verification-sdk build",
+    "dev": "pnpm --filter expo-example start",
+    "typecheck": "pnpm --filter @digisign/react-native-verification-sdk typecheck",
+    "example:android": "pnpm --filter expo-example android",
+    "example:ios": "pnpm --filter expo-example ios",
+    "example:start": "pnpm --filter expo-example start"
+  }
+}
