@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Button, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  Button,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import {
   VerificationWebView,
@@ -9,7 +18,10 @@ import {
 } from "@digisign/react-native-verification-sdk";
 
 const defaultApiBaseUrl = "https://sandbox.usedigisign.dev";
-const demoServerUrl = process.env.EXPO_PUBLIC_DEMO_SERVER_URL ?? "http://10.0.2.2:8787";
+const defaultDemoServerUrl =
+  Platform.select({ ios: "http://127.0.0.1:8787", android: "http://10.0.2.2:8787" }) ??
+  "http://127.0.0.1:8787";
+const demoServerUrl = process.env.EXPO_PUBLIC_DEMO_SERVER_URL ?? defaultDemoServerUrl;
 
 export default function App() {
   const [requestPublicId, setRequestPublicId] = useState("");
