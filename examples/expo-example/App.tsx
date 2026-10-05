@@ -9,6 +9,7 @@ import {
 } from "@digisign/react-native-verification-sdk";
 
 const defaultApiBaseUrl = "https://sandbox.usedigisign.dev";
+const demoServerUrl = process.env.EXPO_PUBLIC_DEMO_SERVER_URL ?? "http://10.0.2.2:8787";
 
 export default function App() {
   const [requestPublicId, setRequestPublicId] = useState("");
@@ -21,11 +22,36 @@ export default function App() {
   const [active, setActive] = useState(false);
   const [lastEvent, setLastEvent] = useState<VerificationEvent>();
   const [lastStatus, setLastStatus] = useState<SigningStatus>();
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoError, setDemoError] = useState<string>();
 
   const internalConfigComplete = Boolean(
     requestPublicId && recipientPublicId && accessToken && workspaceId,
   );
   const canStart = mode === "internal" ? internalConfigComplete : Boolean(directUrl);
+
+  async function bootstrapDemo() {
+    setDemoLoading(true);
+    setDemoError(undefined);
+    try {
+      const response = await fetch(`${demoServerUrl}/bootstrap`, { method: "POST" });
+      const payload = await response.json().catch(() => undefined);
+      if (!response.ok)
+        throw new Error(payload?.error ?? `Demo server returned ${response.status}.`);
+      setRequestPublicId(payload.requestPublicId);
+      setRecipientPublicId(payload.recipientPublicId);
+      setAccessToken(payload.accessToken);
+      setWorkspaceId(payload.workspaceId);
+      setApiBaseUrl(payload.apiBaseUrl ?? defaultApiBaseUrl);
+      setActive(true);
+    } catch (error) {
+      setDemoError(
+        error instanceof Error ? error.message : "Unable to create the demo verification.",
+      );
+    } finally {
+      setDemoLoading(false);
+    }
+  }
 
   if (active) {
     return (
@@ -83,24 +109,17 @@ export default function App() {
 
         {mode === "internal" ? (
           <>
-            <Field
-              label="Request public ID"
-              value={requestPublicId}
-              onChangeText={setRequestPublicId}
+            <Text style={styles.demoDescription}>
+              The local demo server creates a PDF, uploads it, creates a signing request, and
+              returns a short-lived SDK session.
+            </Text>
+            <Text style={styles.helpText}>Demo server: {demoServerUrl}</Text>
+            <Button
+              title={demoLoading ? "Creating demo verification…" : "Create demo verification"}
+              disabled={demoLoading}
+              onPress={() => void bootstrapDemo()}
             />
-            <Field
-              label="Recipient public ID"
-              value={recipientPublicId}
-              onChangeText={setRecipientPublicId}
-            />
-            <Field
-              label="Short-lived session token"
-              value={accessToken}
-              onChangeText={setAccessToken}
-              secureTextEntry
-            />
-            <Field label="Workspace public ID" value={workspaceId} onChangeText={setWorkspaceId} />
-            <Field label="API base URL" value={apiBaseUrl} onChangeText={setApiBaseUrl} />
+            {demoError ? <Text style={styles.errorText}>{demoError}</Text> : null}
             <Text style={styles.helpText}>
               Use a short-lived session token. Never put a permanent API key in the app.
             </Text>
@@ -118,36 +137,12 @@ export default function App() {
             />
           </>
         )}
-        <Button title="Open verification" disabled={!canStart} onPress={() => setActive(true)} />
+        {mode === "url" ? (
+          <Button title="Open verification" disabled={!canStart} onPress={() => setActive(true)} />
+        ) : null}
       </View>
       <StatusBar style="auto" />
     </SafeAreaView>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChangeText,
-  secureTextEntry = false,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  secureTextEntry?: boolean;
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry={secureTextEntry}
-        style={styles.input}
-      />
-    </View>
   );
 }
 
@@ -208,7 +203,8 @@ const styles = StyleSheet.create({
   content: { flex: 1, justifyContent: "center", gap: 12, padding: 24 },
   event: { color: "#4b5563", fontSize: 12, paddingHorizontal: 12, paddingTop: 4 },
   eventBar: { backgroundColor: "#f3f4f6", paddingBottom: 10, paddingTop: 6 },
-  field: { gap: 4 },
+  demoDescription: { color: "#374151", fontSize: 15, lineHeight: 22 },
+  errorText: { color: "#b91c1c", fontSize: 13, lineHeight: 18 },
   helpText: { color: "#6b7280", fontSize: 12, lineHeight: 18 },
   input: { borderColor: "#c7c7cc", borderRadius: 8, borderWidth: 1, padding: 12 },
   label: { color: "#374151", fontSize: 14 },

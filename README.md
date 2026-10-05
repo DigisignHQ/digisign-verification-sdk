@@ -57,6 +57,35 @@ pnpm example:android
 Expo Go is not sufficient for this integration because the verification flow
 depends on native WebView permission callbacks.
 
+## Automated Expo demo
+
+The example includes a local bootstrap server that automates the complete demo
+setup: it exchanges the server-side API key for a short-lived session, selects
+the workspace, generates a PDF, uploads it through DigiSign's upload-session
+and presigned-upload flow, creates a single-use signing request, and returns
+the request and recipient IDs to Expo.
+
+Never put `DIGISIGN_API_KEY` in the Expo app. Configure it only for the local
+Node server:
+
+```sh
+cp examples/demo-server/.env.example examples/demo-server/.env
+# Edit examples/demo-server/.env and set DIGISIGN_API_KEY
+pnpm demo:server
+```
+
+The Android emulator reaches the host server at `http://10.0.2.2:8787` by
+default. For a physical device, set the LAN address before starting Expo:
+
+```sh
+EXPO_PUBLIC_DEMO_SERVER_URL=http://192.168.1.10:8787 pnpm example:start
+```
+
+Tap **Create demo verification** in the example. The server-side flow uses
+`POST /v1/keys/session`, `GET /v1/workspaces`,
+`POST /v1/media/single-use/upload-session`, a `PUT` to the returned upload URL,
+and `POST /v1/requests/single-use` before the SDK opens the verification link.
+
 ## Usage
 
 ```tsx

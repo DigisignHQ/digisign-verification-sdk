@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "pnpm --filter @digisign/react-native-verification-sdk build",
+    "demo:server": "node --env-file-if-exists=examples/demo-server/.env examples/demo-server/server.mjs",
     "dev": "pnpm --filter expo-example start",
     "format": "oxfmt --write README.md packages/react-native/src examples/expo-example",
     "format:check": "oxfmt --check README.md packages/react-native/src examples/expo-example",
