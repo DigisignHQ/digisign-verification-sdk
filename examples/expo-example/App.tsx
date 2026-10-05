@@ -33,6 +33,8 @@ export default function App() {
   async function bootstrapDemo() {
     setDemoLoading(true);
     setDemoError(undefined);
+    setLastEvent(undefined);
+    setLastStatus(undefined);
     try {
       const response = await fetch(`${demoServerUrl}/bootstrap`, { method: "POST" });
       const payload = await response.json().catch(() => undefined);
