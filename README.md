@@ -5,7 +5,7 @@ React Native and Expo integration for DigiSign identity verification flows.
 ## Workspace
 
 - `packages/react-native` — reusable `@digisign/react-native-verification-sdk` package.
-- `examples/expo` — Expo SDK 57 development-build example app.
+- `examples/expo-example` — Expo SDK 57 development-build example app.
 - `docs/` — integration notes and platform requirements.
 
 ## Requirements
@@ -42,9 +42,7 @@ Expo config:
     "android": {
       "permissions": ["CAMERA", "RECORD_AUDIO"]
     },
-    "plugins": [
-      ["react-native-permissions", { "iosPermissions": ["Camera", "Microphone"] }]
-    ]
+    "plugins": [["react-native-permissions", { "iosPermissions": ["Camera", "Microphone"] }]]
   }
 }
 ```
@@ -62,26 +60,42 @@ depends on native WebView permission callbacks.
 ## Usage
 
 ```tsx
-import { VerificationWebView } from '@digisign/react-native-verification-sdk';
+import { VerificationWebView } from "@digisign/react-native-verification-sdk";
 
 <VerificationWebView
-  url="https://verify.usedigisign.com/session/…"
+  requestPublicId={requestPublicId}
+  recipientPublicId={recipientPublicId}
+  accessToken={shortLivedSessionToken}
+  workspaceId={workspacePublicId}
+  apiBaseUrl="https://sandbox.usedigisign.dev"
   onCancel={() => navigation.goBack()}
-  onEvent={(event) => console.log(event.type)}
-/>
+  onSigningStatus={(status) => console.log(status.request_status, status.recipient_status)}
+/>;
 ```
+
+The SDK calls `POST /v1/requests/{requestPublicId}/recipients/{recipientPublicId}/signing-access`
+internally, reads the returned verification `link`, and polls
+`GET .../signing-status` every four seconds. The access token must be a
+short-lived DigiSign session JWT and `workspaceId` is sent as
+`x-ws-identifier`. Do not ship a permanent API key in the mobile app; obtain
+the session token through your backend or another protected session flow.
+
+`apiBaseUrl` defaults to `https://sandbox.usedigisign.dev`. Configure the
+production API base URL for production deployments. The direct `url` prop is
+also supported for integrations that already fetch the signing link.
 
 The component includes loading, error, retry, and cancel UI when `onCancel` is
 provided. Consumers can replace these surfaces with render props:
 
 ```tsx
 <VerificationWebView
-  url={verificationUrl}
+  requestPublicId={requestPublicId}
+  recipientPublicId={recipientPublicId}
+  accessToken={shortLivedSessionToken}
+  workspaceId={workspacePublicId}
   onCancel={closeVerification}
   renderLoading={() => <YourLoadingView />}
-  renderError={({ error, onRetry }) => (
-    <YourErrorView message={error.error} onRetry={onRetry} />
-  )}
+  renderError={({ error, onRetry }) => <YourErrorView message={error.error} onRetry={onRetry} />}
   renderPermissionDenied={({ onRetry, onOpenSettings, canOpenSettings }) => (
     <YourPermissionView
       onRetry={onRetry}
@@ -90,7 +104,7 @@ provided. Consumers can replace these surfaces with render props:
     />
   )}
   renderCancel={({ onCancel }) => <YourCancelButton onPress={onCancel} />}
-/> 
+/>
 ```
 
 When a user has permanently blocked a permission, the default permission view

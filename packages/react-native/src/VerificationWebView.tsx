@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   AppState,
@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
+} from "react-native";
 import {
   checkMultiple,
   PERMISSIONS,
@@ -16,26 +16,40 @@ import {
   openSettings,
   type Permission,
   type PermissionStatus,
-} from 'react-native-permissions';
-import { WebView, type WebView as WebViewType } from 'react-native-webview';
+} from "react-native-permissions";
+import { WebView, type WebView as WebViewType } from "react-native-webview";
+import {
+  DEFAULT_DIGISIGN_API_BASE_URL,
+  fetchSigningAccess,
+  fetchSigningStatus,
+  type SigningStatus,
+} from "./digisignApi";
 
 export const DIGISIGN_ALLOWED_ORIGINS = [
-  'https://usedigisign.com',
-  'https://usedigisign.dev',
+  "https://usedigisign.com",
+  "https://usedigisign.dev",
 ] as const;
-
 export type VerificationEventType =
-  | 'loading'
-  | 'loaded'
-  | 'webview-error'
-  | 'invalid-origin'
-  | 'permission-denied';
-
+  | "access-loading"
+  | "access-loaded"
+  | "access-error"
+  | "loading"
+  | "loaded"
+  | "webview-error"
+  | "invalid-origin"
+  | "permission-denied"
+  | "status-update"
+  | "signed"
+  | "completed"
+  | "rejected"
+  | "expired"
+  | "voided"
+  | "do-not-trust";
 export type VerificationEvent = {
   type: VerificationEventType;
   error?: string;
+  status?: SigningStatus;
 };
-
 export type VerificationCancelRenderProps = { onCancel: () => void };
 export type VerificationErrorRenderProps = {
   error: VerificationEvent;
@@ -48,12 +62,23 @@ export type VerificationPermissionRenderProps = {
   onOpenSettings: () => Promise<void>;
   canOpenSettings: boolean;
 };
-
 export type VerificationWebViewProps = {
-  url: string;
+  /** Use this for an already-created DigiSign verification link. */
+  url?: string;
+  /** When supplied, the SDK obtains the link and polls status internally. */
+  requestPublicId?: string;
+  recipientPublicId?: string;
+  /** Short-lived session JWT. Never use a permanent API key in the app. */
+  accessToken?: string;
+  /** Workspace public identifier sent as x-ws-identifier. */
+  workspaceId?: string;
+  /** Defaults to the sandbox API; configure the production API URL in production. */
+  apiBaseUrl?: string;
+  pollIntervalMs?: number;
   allowedOrigins?: readonly string[];
   onCancel?: () => void;
   onEvent?: (event: VerificationEvent) => void;
+  onSigningStatus?: (status: SigningStatus) => void;
   onNavigationStateChange?: (url: string) => void;
   renderCancel?: (props: VerificationCancelRenderProps) => ReactNode;
   renderError?: (props: VerificationErrorRenderProps) => ReactNode;
@@ -66,14 +91,39 @@ function originAllowed(url: string, allowedOrigins: readonly string[]) {
     const candidate = new URL(url);
     return allowedOrigins.some((allowedOrigin) => {
       const allowed = new URL(allowedOrigin);
-      if (candidate.protocol !== 'https:' || allowed.protocol !== 'https:') return false;
-      return candidate.hostname === allowed.hostname || candidate.hostname.endsWith(`.${allowed.hostname}`);
+      return (
+        candidate.protocol === "https:" &&
+        allowed.protocol === "https:" &&
+        (candidate.hostname === allowed.hostname ||
+          candidate.hostname.endsWith(`.${allowed.hostname}`))
+      );
     });
   } catch {
     return false;
   }
 }
-
+function requiredPermissions(): Permission[] {
+  return (
+    Platform.select({
+      ios: [PERMISSIONS.IOS.CAMERA, PERMISSIONS.IOS.MICROPHONE],
+      android: [PERMISSIONS.ANDROID.CAMERA, PERMISSIONS.ANDROID.RECORD_AUDIO],
+      default: [],
+    }) ?? []
+  );
+}
+function permissionsGranted(statuses: Record<string, PermissionStatus>) {
+  return Object.values(statuses).every(
+    (status) => status === RESULTS.GRANTED || status === RESULTS.LIMITED,
+  );
+}
+function terminalStatus(status: SigningStatus) {
+  return (
+    status.expired ||
+    ["completed", "rejected", "expired", "voided", "do_not_trust"].includes(
+      status.request_status.toLowerCase(),
+    )
+  );
+}
 function DefaultLoading() {
   return (
     <View style={styles.statusCard}>
@@ -83,13 +133,12 @@ function DefaultLoading() {
     </View>
   );
 }
-
 function DefaultError({ error, onRetry, canRetry }: VerificationErrorRenderProps) {
   return (
     <View style={styles.statusCard}>
       <Text style={styles.errorIcon}>!</Text>
       <Text style={styles.statusTitle}>Verification could not be loaded</Text>
-      <Text style={styles.statusMessage}>{error.error || 'Please check the URL and try again.'}</Text>
+      <Text style={styles.statusMessage}>{error.error || "Please try again."}</Text>
       {canRetry ? (
         <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
@@ -98,7 +147,6 @@ function DefaultError({ error, onRetry, canRetry }: VerificationErrorRenderProps
     </View>
   );
 }
-
 function DefaultCancel({ onCancel }: VerificationCancelRenderProps) {
   return (
     <Pressable
@@ -112,47 +160,43 @@ function DefaultCancel({ onCancel }: VerificationCancelRenderProps) {
     </Pressable>
   );
 }
-
-function DefaultPermissionDenied({ onRetry, onOpenSettings, canOpenSettings }: VerificationPermissionRenderProps) {
+function DefaultPermissionDenied({
+  onRetry,
+  onOpenSettings,
+  canOpenSettings,
+}: VerificationPermissionRenderProps) {
   return (
     <View style={styles.statusCard}>
       <Text style={styles.errorIcon}>!</Text>
       <Text style={styles.statusTitle}>Camera and microphone access required</Text>
       <Text style={styles.statusMessage}>
         {canOpenSettings
-          ? 'Camera or microphone access is blocked. Enable both permissions in Settings to continue.'
-          : 'Allow camera and microphone access to continue with DigiSign verification.'}
+          ? "Camera or microphone access is blocked. Enable both permissions in Settings to continue."
+          : "Allow camera and microphone access to continue with DigiSign verification."}
       </Text>
       <Pressable
         accessibilityRole="button"
         onPress={canOpenSettings ? onOpenSettings : onRetry}
         style={styles.retryButton}
       >
-        <Text style={styles.retryText}>{canOpenSettings ? 'Open Settings' : 'Allow access'}</Text>
+        <Text style={styles.retryText}>{canOpenSettings ? "Open Settings" : "Allow access"}</Text>
       </Pressable>
     </View>
   );
 }
 
-function requiredPermissions(): Permission[] {
-  return Platform.select({
-    ios: [PERMISSIONS.IOS.CAMERA, PERMISSIONS.IOS.MICROPHONE],
-    android: [PERMISSIONS.ANDROID.CAMERA, PERMISSIONS.ANDROID.RECORD_AUDIO],
-    default: [],
-  }) ?? [];
-}
-
-function permissionsGranted(statuses: Record<string, PermissionStatus>) {
-  return Object.values(statuses).every(
-    (status) => status === RESULTS.GRANTED || status === RESULTS.LIMITED,
-  );
-}
-
 export function VerificationWebView({
   url,
+  requestPublicId,
+  recipientPublicId,
+  accessToken,
+  workspaceId,
+  apiBaseUrl = DEFAULT_DIGISIGN_API_BASE_URL,
+  pollIntervalMs = 4000,
   allowedOrigins = DIGISIGN_ALLOWED_ORIGINS,
   onCancel,
   onEvent,
+  onSigningStatus,
   onNavigationStateChange,
   renderCancel,
   renderError,
@@ -160,125 +204,235 @@ export function VerificationWebView({
   renderPermissionDenied,
 }: VerificationWebViewProps) {
   const webViewRef = useRef<WebViewType>(null);
-  const initialUrlAllowed = originAllowed(url, allowedOrigins);
-  const [isLoading, setIsLoading] = useState(initialUrlAllowed);
+  const abortRef = useRef<AbortController | null>(null);
+  const internalMode = Boolean(requestPublicId || recipientPublicId || accessToken || workspaceId);
+  const configComplete = Boolean(
+    requestPublicId && recipientPublicId && accessToken && workspaceId,
+  );
+  const [resolvedUrl, setResolvedUrl] = useState(url);
+  const [isLoading, setIsLoading] = useState(!url);
   const [error, setError] = useState<VerificationEvent>();
-  const [permissionStatuses, setPermissionStatuses] = useState<Record<string, PermissionStatus>>({});
-  const [permissionChecking, setPermissionChecking] = useState(initialUrlAllowed);
+  const [permissionStatuses, setPermissionStatuses] = useState<Record<string, PermissionStatus>>(
+    {},
+  );
+  const [permissionChecking, setPermissionChecking] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [canOpenSettings, setCanOpenSettings] = useState(false);
-
+  const emit = useCallback(
+    (event: VerificationEvent) => {
+      onEvent?.(event);
+    },
+    [onEvent],
+  );
+  const reportError = useCallback(
+    (nextError: VerificationEvent) => {
+      setIsLoading(false);
+      setError(nextError);
+      emit(nextError);
+    },
+    [emit],
+  );
   const requestPermissions = useCallback(async () => {
     const permissions = requiredPermissions();
     setPermissionChecking(true);
-    if (permissions.length === 0) {
+    if (!permissions.length) {
       setPermissionDenied(false);
       setPermissionChecking(false);
       return true;
     }
-
     try {
       const current = await checkMultiple(permissions);
-      const missing = permissions.filter((permission) => {
-        const status = current[permission];
-        return status !== RESULTS.GRANTED && status !== RESULTS.LIMITED;
-      });
-      const next = missing.length > 0 ? await requestMultiple(missing) : current;
-      const statuses = { ...current, ...next };
-
-      setPermissionStatuses(statuses);
-      setCanOpenSettings(
-        Object.values(statuses).some(
-          (status) => status === RESULTS.BLOCKED || status === RESULTS.RESTRICTED,
-        ),
+      const missing = permissions.filter(
+        (permission) =>
+          current[permission] !== RESULTS.GRANTED && current[permission] !== RESULTS.LIMITED,
       );
+      const statuses = { ...current, ...(missing.length ? await requestMultiple(missing) : {}) };
+      setPermissionStatuses(statuses);
+      setCanOpenSettings(Object.values(statuses).some((status) => status === RESULTS.BLOCKED));
       const granted = permissionsGranted(statuses);
       setPermissionDenied(!granted);
-      if (!granted) {
-        const event = { type: 'permission-denied' as const, error: 'Camera and microphone permissions are required.' };
-        setError(event);
-        onEvent?.(event);
-      } else {
-        setError(undefined);
-      }
+      if (!granted)
+        reportError({
+          type: "permission-denied",
+          error: "Camera and microphone permissions are required.",
+        });
+      else setError(undefined);
       return granted;
     } catch (permissionError) {
-      const event = {
-        type: 'permission-denied' as const,
-        error: permissionError instanceof Error ? permissionError.message : 'Unable to request camera and microphone permissions.',
-      };
-      setError(event);
+      reportError({
+        type: "permission-denied",
+        error:
+          permissionError instanceof Error
+            ? permissionError.message
+            : "Unable to request camera and microphone permissions.",
+      });
       setPermissionDenied(true);
-      setCanOpenSettings(false);
-      onEvent?.(event);
       return false;
     } finally {
       setPermissionChecking(false);
     }
-  }, [onEvent]);
-
-  const reportError = useCallback((nextError: VerificationEvent) => {
-    setIsLoading(false);
-    setError(nextError);
-    onEvent?.(nextError);
-  }, [onEvent]);
-
+  }, [reportError]);
+  const loadAccess = useCallback(async () => {
+    if (!internalMode) {
+      setResolvedUrl(url);
+      return;
+    }
+    if (!configComplete) {
+      reportError({
+        type: "access-error",
+        error: "requestPublicId, recipientPublicId, accessToken, and workspaceId are required.",
+      });
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setError(undefined);
+    setResolvedUrl(undefined);
+    setIsLoading(true);
+    emit({ type: "access-loading" });
+    try {
+      const access = await fetchSigningAccess({
+        apiBaseUrl,
+        requestPublicId: requestPublicId!,
+        recipientPublicId: recipientPublicId!,
+        accessToken: accessToken!,
+        workspaceId: workspaceId!,
+        signal: controller.signal,
+      });
+      if (!originAllowed(access.link, allowedOrigins))
+        throw new Error("DigiSign returned a verification link outside the allowed origins.");
+      setResolvedUrl(access.link);
+      emit({ type: "access-loaded" });
+    } catch (accessError) {
+      if (!controller.signal.aborted)
+        reportError({
+          type: "access-error",
+          error:
+            accessError instanceof Error
+              ? accessError.message
+              : "Unable to fetch the verification link.",
+        });
+    }
+  }, [
+    accessToken,
+    allowedOrigins,
+    apiBaseUrl,
+    configComplete,
+    emit,
+    internalMode,
+    recipientPublicId,
+    reportError,
+    requestPublicId,
+    url,
+    workspaceId,
+  ]);
   useEffect(() => {
-    if (initialUrlAllowed) return;
-    reportError({
-      type: 'invalid-origin',
-      error: `Verification URL must use a DigiSign origin: ${allowedOrigins.join(', ')}`,
-    });
-  }, [allowedOrigins, initialUrlAllowed, reportError]);
-
+    void loadAccess();
+    return () => abortRef.current?.abort();
+  }, [loadAccess]);
   useEffect(() => {
-    if (!initialUrlAllowed) return;
+    if (!resolvedUrl) return;
+    if (!originAllowed(resolvedUrl, allowedOrigins)) {
+      reportError({
+        type: "invalid-origin",
+        error: `Verification URL must use a DigiSign origin: ${allowedOrigins.join(", ")}`,
+      });
+      return;
+    }
     void requestPermissions();
-  }, [initialUrlAllowed, requestPermissions]);
-
+  }, [allowedOrigins, requestPermissions, reportError, resolvedUrl]);
   useEffect(() => {
     if (!permissionDenied) return;
-
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        void requestPermissions();
-      }
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") void requestPermissions();
     });
-
     return () => subscription.remove();
   }, [permissionDenied, requestPermissions]);
-
+  useEffect(() => {
+    if (!internalMode || !configComplete || !resolvedUrl) return;
+    let cancelled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const status = await fetchSigningStatus({
+          apiBaseUrl,
+          requestPublicId: requestPublicId!,
+          recipientPublicId: recipientPublicId!,
+          accessToken: accessToken!,
+          workspaceId: workspaceId!,
+        });
+        if (cancelled) return;
+        onSigningStatus?.(status);
+        emit({ type: "status-update", status });
+        const normalized = status.request_status.toLowerCase();
+        if (status.recipient_status.toLowerCase() === "signed") emit({ type: "signed", status });
+        if (normalized === "completed") emit({ type: "completed", status });
+        else if (normalized === "rejected") emit({ type: "rejected", status });
+        else if (normalized === "expired" || status.expired) emit({ type: "expired", status });
+        else if (normalized === "voided") emit({ type: "voided", status });
+        else if (normalized === "do_not_trust") emit({ type: "do-not-trust", status });
+        if (!terminalStatus(status))
+          timeout = setTimeout(() => void poll(), Math.max(3000, pollIntervalMs));
+      } catch (statusError) {
+        if (!cancelled) {
+          emit({
+            type: "access-error",
+            error:
+              statusError instanceof Error
+                ? statusError.message
+                : "Unable to fetch signing status.",
+          });
+          timeout = setTimeout(() => void poll(), Math.max(3000, pollIntervalMs));
+        }
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [
+    accessToken,
+    apiBaseUrl,
+    configComplete,
+    emit,
+    internalMode,
+    onSigningStatus,
+    pollIntervalMs,
+    recipientPublicId,
+    requestPublicId,
+    resolvedUrl,
+    workspaceId,
+  ]);
   const retry = useCallback(() => {
     setError(undefined);
     setIsLoading(true);
-    webViewRef.current?.reload();
-  }, []);
-
+    if (internalMode) void loadAccess();
+    else webViewRef.current?.reload();
+  }, [internalMode, loadAccess]);
   const retryPermissions = useCallback(() => {
     setError(undefined);
     void requestPermissions();
   }, [requestPermissions]);
-
   const openAppSettings = useCallback(async () => {
     try {
       await openSettings();
     } catch (settingsError) {
-      const event = {
-        type: 'permission-denied' as const,
-        error: settingsError instanceof Error ? settingsError.message : 'Unable to open app settings.',
-      };
-      setError(event);
-      onEvent?.(event);
+      reportError({
+        type: "permission-denied",
+        error:
+          settingsError instanceof Error ? settingsError.message : "Unable to open app settings.",
+      });
     }
-  }, [onEvent]);
-
+  }, [reportError]);
   return (
     <View style={styles.container}>
-      {initialUrlAllowed && !permissionChecking && !permissionDenied ? (
+      {resolvedUrl && !permissionChecking && !permissionDenied && !error ? (
         <WebView
           ref={webViewRef}
           style={styles.webView}
-          source={{ uri: url }}
+          source={{ uri: resolvedUrl }}
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
           mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
@@ -286,18 +440,24 @@ export function VerificationWebView({
           onLoadStart={() => {
             setError(undefined);
             setIsLoading(true);
-            onEvent?.({ type: 'loading' });
+            emit({ type: "loading" });
           }}
           onLoadEnd={() => {
             setIsLoading(false);
-            onEvent?.({ type: 'loaded' });
+            emit({ type: "loaded" });
           }}
-          onError={(event) => reportError({ type: 'webview-error', error: event.nativeEvent.description })}
-          onHttpError={(event) => reportError({ type: 'webview-error', error: `DigiSign returned HTTP ${event.nativeEvent.statusCode}.` })}
+          onError={(event) =>
+            reportError({ type: "webview-error", error: event.nativeEvent.description })
+          }
+          onHttpError={(event) =>
+            reportError({
+              type: "webview-error",
+              error: `DigiSign returned HTTP ${event.nativeEvent.statusCode}.`,
+            })
+          }
           onNavigationStateChange={(state) => onNavigationStateChange?.(state.url)}
         />
       ) : null}
-
       {permissionDenied ? (
         <View style={styles.overlay}>
           {renderPermissionDenied ? (
@@ -317,19 +477,20 @@ export function VerificationWebView({
           )}
         </View>
       ) : null}
-
       {isLoading && !error && !permissionDenied ? (
         <View pointerEvents="none" style={styles.overlay}>
           {renderLoading ? renderLoading() : <DefaultLoading />}
         </View>
       ) : null}
-
       {error && !permissionDenied ? (
         <View style={styles.overlay}>
-          {renderError ? renderError({ error, onRetry: retry, canRetry: initialUrlAllowed }) : <DefaultError error={error} onRetry={retry} canRetry={initialUrlAllowed} />}
+          {renderError ? (
+            renderError({ error, onRetry: retry, canRetry: true })
+          ) : (
+            <DefaultError error={error} onRetry={retry} canRetry />
+          )}
         </View>
       ) : null}
-
       {onCancel ? (
         <View style={styles.cancelContainer}>
           {renderCancel ? renderCancel({ onCancel }) : <DefaultCancel onCancel={onCancel} />}
@@ -338,18 +499,57 @@ export function VerificationWebView({
     </View>
   );
 }
-
 const styles = StyleSheet.create({
-  cancelButton: { alignItems: 'center', backgroundColor: 'rgba(17, 24, 39, 0.85)', borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
-  cancelContainer: { position: 'absolute', right: 16, top: 16 },
-  cancelIcon: { color: '#fff', fontSize: 28, fontWeight: '300', lineHeight: 30 },
-  container: { backgroundColor: '#fff', flex: 1 },
-  errorIcon: { backgroundColor: '#dc2626', borderRadius: 20, color: '#fff', fontSize: 24, fontWeight: '700', height: 40, lineHeight: 40, marginBottom: 16, overflow: 'hidden', textAlign: 'center', width: 40 },
-  overlay: { alignItems: 'center', backgroundColor: '#fff', bottom: 0, justifyContent: 'center', left: 0, position: 'absolute', right: 0, top: 0 },
-  retryButton: { backgroundColor: '#1d4ed8', borderRadius: 8, marginTop: 20, paddingHorizontal: 20, paddingVertical: 12 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  statusCard: { alignItems: 'center', maxWidth: 320, padding: 24 },
-  statusMessage: { color: '#6b7280', fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  statusTitle: { fontSize: 20, fontWeight: '700', marginBottom: 8, marginTop: 16, textAlign: 'center' },
+  cancelButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(17, 24, 39, 0.85)",
+    borderRadius: 20,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  cancelContainer: { position: "absolute", right: 16, top: 16 },
+  cancelIcon: { color: "#fff", fontSize: 28, fontWeight: "300", lineHeight: 30 },
+  container: { backgroundColor: "#fff", flex: 1 },
+  errorIcon: {
+    backgroundColor: "#dc2626",
+    borderRadius: 20,
+    color: "#fff",
+    fontSize: 24,
+    fontWeight: "700",
+    height: 40,
+    lineHeight: 40,
+    marginBottom: 16,
+    overflow: "hidden",
+    textAlign: "center",
+    width: 40,
+  },
+  overlay: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  retryButton: {
+    backgroundColor: "#1d4ed8",
+    borderRadius: 8,
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  retryText: { color: "#fff", fontWeight: "600" },
+  statusCard: { alignItems: "center", maxWidth: 320, padding: 24 },
+  statusMessage: { color: "#6b7280", fontSize: 15, lineHeight: 22, textAlign: "center" },
+  statusTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 8,
+    marginTop: 16,
+    textAlign: "center",
+  },
   webView: { flex: 1 },
 });
