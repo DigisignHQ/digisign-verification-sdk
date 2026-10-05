@@ -35,6 +35,7 @@ export default function App() {
   const [active, setActive] = useState(false);
   const [lastEvent, setLastEvent] = useState<VerificationEvent>();
   const [lastStatus, setLastStatus] = useState<SigningStatus>();
+  const [lastNavigationUrl, setLastNavigationUrl] = useState<string>();
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState<string>();
 
@@ -85,6 +86,7 @@ export default function App() {
               onEvent={setLastEvent}
               onSigningStatus={setLastStatus}
               onTerminal={setLastStatus}
+              onNavigationStateChange={setLastNavigationUrl}
               renderPermissionDenied={(props) => <PermissionDeniedView {...props} />}
             />
           ) : (
@@ -92,6 +94,7 @@ export default function App() {
               url={directUrl}
               onCancel={() => setActive(false)}
               onEvent={setLastEvent}
+              onNavigationStateChange={setLastNavigationUrl}
               renderPermissionDenied={(props) => <PermissionDeniedView {...props} />}
             />
           )}
@@ -104,6 +107,9 @@ export default function App() {
             <Text style={styles.event}>
               Request: {lastStatus.request_status} · Recipient: {lastStatus.recipient_status}
             </Text>
+          ) : null}
+          {lastNavigationUrl ? (
+            <Text style={styles.event}>Page: {new URL(lastNavigationUrl).hostname}</Text>
           ) : null}
         </View>
       </SafeAreaView>

@@ -463,6 +463,9 @@ export function VerificationWebView({
           ref={webViewRef}
           style={styles.webView}
           source={{ uri: resolvedUrl }}
+          javaScriptEnabled
+          domStorageEnabled
+          originWhitelist={["https://*"]}
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
           mediaCapturePermissionGrantType="grantIfSameHostElseDeny"
@@ -483,6 +486,12 @@ export function VerificationWebView({
             reportError({
               type: "webview-error",
               error: `DigiSign returned HTTP ${event.nativeEvent.statusCode}.`,
+            })
+          }
+          onContentProcessDidTerminate={() =>
+            reportError({
+              type: "webview-error",
+              error: "The DigiSign page process stopped unexpectedly. Please retry.",
             })
           }
           onNavigationStateChange={(state) => onNavigationStateChange?.(state.url)}
