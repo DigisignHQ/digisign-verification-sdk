@@ -57,14 +57,19 @@ async function createSession() {
     headers: { "x-api-key": apiKey },
   });
   const token = payload?.meta?.access_token;
+  const organisationId = payload?.data?.organisation_id;
   if (!token) throw new Error("DigiSign did not return meta.access_token from the session endpoint.");
-  return token;
+  if (!organisationId) throw new Error("DigiSign did not return data.organisation_id from the session endpoint.");
+  return { token, organisationId };
 }
 
-async function resolveWorkspace(sessionToken) {
+async function resolveWorkspace(sessionToken, organisationId) {
   if (configuredWorkspaceId) return configuredWorkspaceId;
   const payload = await apiRequest("/v1/workspaces", {
-    headers: { Authorization: `Bearer ${sessionToken}` },
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      "x-o10n-identifier": organisationId,
+    },
   });
   const workspaces = responseValue(payload);
   const workspace = Array.isArray(workspaces) ? workspaces[0] : undefined;
@@ -73,11 +78,12 @@ async function resolveWorkspace(sessionToken) {
   return workspaceId;
 }
 
-async function uploadDemoDocument(sessionToken, workspaceId) {
+async function uploadDemoDocument(sessionToken, organisationId, workspaceId) {
   const uploadSession = await apiRequest("/v1/media/single-use/upload-session", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${sessionToken}`,
+      "x-o10n-identifier": organisationId,
       "x-ws-identifier": workspaceId,
       "Content-Type": "application/json",
     },
@@ -99,11 +105,12 @@ async function uploadDemoDocument(sessionToken, workspaceId) {
   return upload.upload_key;
 }
 
-async function createDemoRequest(sessionToken, workspaceId, uploadKey, recipient) {
+async function createDemoRequest(sessionToken, organisationId, workspaceId, uploadKey, recipient) {
   const payload = await apiRequest("/v1/requests/single-use", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${sessionToken}`,
+      "x-o10n-identifier": organisationId,
       "x-ws-identifier": workspaceId,
       "Content-Type": "application/json",
     },
@@ -126,11 +133,11 @@ async function bootstrap(requestUrl) {
     name: requestUrl.searchParams.get("name") || process.env.DEMO_RECIPIENT_NAME || "DigiSign Demo Recipient",
     email: requestUrl.searchParams.get("email") || process.env.DEMO_RECIPIENT_EMAIL || "demo@example.com",
   };
-  const sessionToken = await createSession();
-  const workspaceId = await resolveWorkspace(sessionToken);
-  const uploadKey = await uploadDemoDocument(sessionToken, workspaceId);
-  const request = await createDemoRequest(sessionToken, workspaceId, uploadKey, recipient);
-  return { ...request, accessToken: sessionToken, workspaceId, apiBaseUrl };
+  const session = await createSession();
+  const workspaceId = await resolveWorkspace(session.token, session.organisationId);
+  const uploadKey = await uploadDemoDocument(session.token, session.organisationId, workspaceId);
+  const request = await createDemoRequest(session.token, session.organisationId, workspaceId, uploadKey, recipient);
+  return { ...request, accessToken: session.token, workspaceId, organisationId: session.organisationId, apiBaseUrl };
 }
 
 const server = http.createServer(async (request, response) => {

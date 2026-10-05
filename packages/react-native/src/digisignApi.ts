@@ -58,6 +58,7 @@ export function fetchSigningAccess({
   recipientPublicId,
   accessToken,
   workspaceId,
+  organisationId,
   signal,
 }: {
   apiBaseUrl: string;
@@ -65,6 +66,7 @@ export function fetchSigningAccess({
   recipientPublicId: string;
   accessToken: string;
   workspaceId: string;
+  organisationId?: string;
   signal?: AbortSignal;
 }) {
   return request<SigningAccess>(
@@ -74,6 +76,7 @@ export function fetchSigningAccess({
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "x-ws-identifier": workspaceId,
+        ...(organisationId ? { "x-o10n-identifier": organisationId } : {}),
         "Cache-Control": "no-store",
       },
     },
@@ -87,6 +90,7 @@ export function fetchSigningStatus({
   recipientPublicId,
   accessToken,
   workspaceId,
+  organisationId,
   signal,
 }: {
   apiBaseUrl: string;
@@ -94,6 +98,7 @@ export function fetchSigningStatus({
   recipientPublicId: string;
   accessToken: string;
   workspaceId: string;
+  organisationId?: string;
   signal?: AbortSignal;
 }) {
   return request<SigningStatus>(
@@ -103,6 +108,7 @@ export function fetchSigningStatus({
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "x-ws-identifier": workspaceId,
+        ...(organisationId ? { "x-o10n-identifier": organisationId } : {}),
         "Cache-Control": "no-cache",
       },
     },

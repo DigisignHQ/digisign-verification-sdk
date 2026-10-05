@@ -73,6 +73,8 @@ export type VerificationWebViewProps = {
   accessToken?: string;
   /** Workspace public identifier sent as x-ws-identifier. */
   workspaceId?: string;
+  /** Organisation public identifier sent as x-o10n-identifier. */
+  organisationId?: string;
   /** Defaults to the sandbox API; configure the production API URL in production. */
   apiBaseUrl?: string;
   pollIntervalMs?: number;
@@ -193,6 +195,7 @@ export function VerificationWebView({
   recipientPublicId,
   accessToken,
   workspaceId,
+  organisationId,
   apiBaseUrl = DEFAULT_DIGISIGN_API_BASE_URL,
   pollIntervalMs = 4000,
   allowedOrigins = DIGISIGN_ALLOWED_ORIGINS,
@@ -208,9 +211,11 @@ export function VerificationWebView({
 }: VerificationWebViewProps) {
   const webViewRef = useRef<WebViewType>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const internalMode = Boolean(requestPublicId || recipientPublicId || accessToken || workspaceId);
+  const internalMode = Boolean(
+    requestPublicId || recipientPublicId || accessToken || workspaceId || organisationId,
+  );
   const configComplete = Boolean(
-    requestPublicId && recipientPublicId && accessToken && workspaceId,
+    requestPublicId && recipientPublicId && accessToken && workspaceId && organisationId,
   );
   const [resolvedUrl, setResolvedUrl] = useState(url);
   const [isLoading, setIsLoading] = useState(!url);
@@ -283,7 +288,8 @@ export function VerificationWebView({
     if (!configComplete) {
       reportError({
         type: "access-error",
-        error: "requestPublicId, recipientPublicId, accessToken, and workspaceId are required.",
+        error:
+          "requestPublicId, recipientPublicId, accessToken, workspaceId, and organisationId are required.",
       });
       return;
     }
@@ -301,6 +307,7 @@ export function VerificationWebView({
         recipientPublicId: recipientPublicId!,
         accessToken: accessToken!,
         workspaceId: workspaceId!,
+        organisationId: organisationId!,
         signal: controller.signal,
       });
       if (!originAllowed(access.link, allowedOrigins))
@@ -324,6 +331,7 @@ export function VerificationWebView({
     configComplete,
     emit,
     internalMode,
+    organisationId,
     recipientPublicId,
     reportError,
     requestPublicId,
@@ -367,6 +375,7 @@ export function VerificationWebView({
           recipientPublicId: recipientPublicId!,
           accessToken: accessToken!,
           workspaceId: workspaceId!,
+          organisationId: organisationId!,
         });
         if (cancelled) return;
         onSigningStatus?.(status);
@@ -417,6 +426,7 @@ export function VerificationWebView({
     configComplete,
     emit,
     internalMode,
+    organisationId,
     onTerminal,
     onSigningStatus,
     pollIntervalMs,

@@ -96,6 +96,7 @@ import { VerificationWebView } from "@digisign/react-native-verification-sdk";
   recipientPublicId={recipientPublicId}
   accessToken={shortLivedSessionToken}
   workspaceId={workspacePublicId}
+  organisationId={organisationPublicId}
   apiBaseUrl="https://sandbox.usedigisign.dev"
   onCancel={() => navigation.goBack()}
   onSigningStatus={(status) => console.log(status.request_status, status.recipient_status)}
@@ -106,7 +107,7 @@ The SDK calls `POST /v1/requests/{requestPublicId}/recipients/{recipientPublicId
 internally, reads the returned verification `link`, and polls
 `GET .../signing-status` every four seconds. The access token must be a
 short-lived DigiSign session JWT and `workspaceId` is sent as
-`x-ws-identifier`. Do not ship a permanent API key in the mobile app; obtain
+`x-ws-identifier`; `organisationId` is sent as `x-o10n-identifier`. Do not ship a permanent API key in the mobile app; obtain
 the session token through your backend or another protected session flow.
 
 `apiBaseUrl` defaults to `https://sandbox.usedigisign.dev`. Configure the

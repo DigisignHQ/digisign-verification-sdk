@@ -16,6 +16,7 @@ export default function App() {
   const [recipientPublicId, setRecipientPublicId] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
+  const [organisationId, setOrganisationId] = useState("");
   const [apiBaseUrl, setApiBaseUrl] = useState(defaultApiBaseUrl);
   const [directUrl, setDirectUrl] = useState("");
   const [mode, setMode] = useState<"internal" | "url">("internal");
@@ -26,7 +27,7 @@ export default function App() {
   const [demoError, setDemoError] = useState<string>();
 
   const internalConfigComplete = Boolean(
-    requestPublicId && recipientPublicId && accessToken && workspaceId,
+    requestPublicId && recipientPublicId && accessToken && workspaceId && organisationId,
   );
   const canStart = mode === "internal" ? internalConfigComplete : Boolean(directUrl);
 
@@ -44,6 +45,7 @@ export default function App() {
       setRecipientPublicId(payload.recipientPublicId);
       setAccessToken(payload.accessToken);
       setWorkspaceId(payload.workspaceId);
+      setOrganisationId(payload.organisationId);
       setApiBaseUrl(payload.apiBaseUrl ?? defaultApiBaseUrl);
       setActive(true);
     } catch (error) {
@@ -65,6 +67,7 @@ export default function App() {
               recipientPublicId={recipientPublicId}
               accessToken={accessToken}
               workspaceId={workspaceId}
+              organisationId={organisationId}
               apiBaseUrl={apiBaseUrl}
               onCancel={() => setActive(false)}
               onEvent={setLastEvent}
