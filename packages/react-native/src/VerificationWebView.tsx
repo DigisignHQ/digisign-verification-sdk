@@ -33,6 +33,7 @@ export type VerificationEventType =
   | "access-loading"
   | "access-loaded"
   | "access-error"
+  | "status-error"
   | "loading"
   | "loaded"
   | "webview-error"
@@ -79,6 +80,7 @@ export type VerificationWebViewProps = {
   onCancel?: () => void;
   onEvent?: (event: VerificationEvent) => void;
   onSigningStatus?: (status: SigningStatus) => void;
+  onTerminal?: (status: SigningStatus) => void;
   onNavigationStateChange?: (url: string) => void;
   renderCancel?: (props: VerificationCancelRenderProps) => ReactNode;
   renderError?: (props: VerificationErrorRenderProps) => ReactNode;
@@ -197,6 +199,7 @@ export function VerificationWebView({
   onCancel,
   onEvent,
   onSigningStatus,
+  onTerminal,
   onNavigationStateChange,
   renderCancel,
   renderError,
@@ -353,6 +356,9 @@ export function VerificationWebView({
     if (!internalMode || !configComplete || !resolvedUrl) return;
     let cancelled = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    let failureCount = 0;
+    let previousRecipientStatus: string | undefined;
+    let previousRequestStatus: string | undefined;
     const poll = async () => {
       try {
         const status = await fetchSigningStatus({
@@ -366,24 +372,37 @@ export function VerificationWebView({
         onSigningStatus?.(status);
         emit({ type: "status-update", status });
         const normalized = status.request_status.toLowerCase();
-        if (status.recipient_status.toLowerCase() === "signed") emit({ type: "signed", status });
-        if (normalized === "completed") emit({ type: "completed", status });
-        else if (normalized === "rejected") emit({ type: "rejected", status });
-        else if (normalized === "expired" || status.expired) emit({ type: "expired", status });
-        else if (normalized === "voided") emit({ type: "voided", status });
-        else if (normalized === "do_not_trust") emit({ type: "do-not-trust", status });
+        const recipientStatus = status.recipient_status.toLowerCase();
+        if (recipientStatus === "signed" && previousRecipientStatus !== "signed")
+          emit({ type: "signed", status });
+        if (normalized !== previousRequestStatus) {
+          if (normalized === "completed") emit({ type: "completed", status });
+          else if (normalized === "rejected") emit({ type: "rejected", status });
+          else if (normalized === "expired" || status.expired) emit({ type: "expired", status });
+          else if (normalized === "voided") emit({ type: "voided", status });
+          else if (normalized === "do_not_trust") emit({ type: "do-not-trust", status });
+        }
+        previousRecipientStatus = recipientStatus;
+        previousRequestStatus = normalized;
+        failureCount = 0;
+        if (terminalStatus(status)) onTerminal?.(status);
         if (!terminalStatus(status))
           timeout = setTimeout(() => void poll(), Math.max(3000, pollIntervalMs));
       } catch (statusError) {
         if (!cancelled) {
+          failureCount += 1;
           emit({
-            type: "access-error",
+            type: "status-error",
             error:
               statusError instanceof Error
                 ? statusError.message
                 : "Unable to fetch signing status.",
           });
-          timeout = setTimeout(() => void poll(), Math.max(3000, pollIntervalMs));
+          const retryDelay = Math.min(
+            Math.max(3000, pollIntervalMs) * 2 ** Math.min(failureCount - 1, 4),
+            60000,
+          );
+          timeout = setTimeout(() => void poll(), retryDelay);
         }
       }
     };
@@ -398,6 +417,7 @@ export function VerificationWebView({
     configComplete,
     emit,
     internalMode,
+    onTerminal,
     onSigningStatus,
     pollIntervalMs,
     recipientPublicId,
