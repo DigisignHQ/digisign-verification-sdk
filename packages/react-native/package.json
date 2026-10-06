@@ -1,6 +1,6 @@
 {
   "name": "@usedigisign/react-native-verification-sdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "DigiSign verification WebView SDK for React Native and Expo",
   "license": "MIT",
   "repository": {
@@ -36,7 +36,7 @@
     },
     "./package.json": "./package.json"
   },
-  "files": ["lib", "src"],
+  "files": ["assets", "lib", "src"],
   "sideEffects": false,
   "scripts": {
     "build": "bob build",

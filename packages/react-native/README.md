@@ -25,7 +25,7 @@ import { VerificationWebView } from "@usedigisign/react-native-verification-sdk"
   workspaceId={workspacePublicId}
   organisationId={organisationPublicId}
   onCancel={closeVerification}
-/>
+/>;
 ```
 
 The SDK fetches the verification URL internally in this mode and polls the
@@ -38,6 +38,19 @@ access-flow credentials:
 ```tsx
 <VerificationWebView url={verificationUrl} onCancel={closeVerification} />
 ```
+
+## Flow preview
+
+These screenshots show the SDK-managed loading state and the DigiSign Web
+verification flow in the Expo example:
+
+| Loading verification                                                    | Review and sign                                               |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| ![Loading verification](assets/screenshots/01-loading-verification.png) | ![Review and sign](assets/screenshots/02-review-and-sign.png) |
+
+| Biometric verification loading                                                 | Face positioning                                                |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| ![Biometric verification loading](assets/screenshots/03-biometric-loading.png) | ![Face positioning](assets/screenshots/04-face-positioning.png) |
 
 ## Custom UI and events
 

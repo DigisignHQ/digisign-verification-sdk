@@ -8,6 +8,19 @@ React Native and Expo integration for DigiSign identity verification flows.
 - `examples/expo-example` — Expo SDK 57 development-build example app.
 - `docs/` — integration notes and platform requirements.
 
+## Flow preview
+
+The Expo example demonstrates the SDK loading state and the DigiSign Web
+verification flow:
+
+| Loading verification                                                                          | Review and sign                                                                     |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| ![Loading verification](packages/react-native/assets/screenshots/01-loading-verification.png) | ![Review and sign](packages/react-native/assets/screenshots/02-review-and-sign.png) |
+
+| Biometric verification loading                                                                       | Face positioning                                                                      |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| ![Biometric verification loading](packages/react-native/assets/screenshots/03-biometric-loading.png) | ![Face positioning](packages/react-native/assets/screenshots/04-face-positioning.png) |
+
 ## Requirements
 
 - Node.js `>=22.13.0`
