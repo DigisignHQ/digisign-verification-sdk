@@ -14,6 +14,15 @@ function responseValue(payload) {
   return payload?.data ?? payload?.value;
 }
 
+function apiErrorFromPayload(payload, status) {
+  const error = payload?.meta ?? payload ?? {};
+  return {
+    status,
+    code: error.code ?? (status === 402 ? "INSUFFICIENT_CREDITS" : undefined),
+    message: error.message ?? error.error ?? `DigiSign API request failed (${status}).`,
+  };
+}
+
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
@@ -21,7 +30,11 @@ async function apiRequest(path, options = {}) {
   });
   const payload = await response.json().catch(() => undefined);
   if (!response.ok) {
-    throw new Error(payload?.meta?.message ?? `DigiSign API request failed (${response.status}).`);
+    const error = apiErrorFromPayload(payload, response.status);
+    const exception = new Error(error.message);
+    exception.status = error.status;
+    exception.code = error.code;
+    throw exception;
   }
   return payload;
 }
@@ -158,7 +171,15 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }).end(JSON.stringify(result));
     } catch (error) {
       console.error(error instanceof Error ? error.message : error);
-      response.writeHead(502, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "Unable to create the DigiSign demo request." }));
+      response
+        .writeHead(error?.status === 402 ? 402 : 502, { "Content-Type": "application/json" })
+        .end(
+          JSON.stringify({
+            error: error?.message ?? "Unable to create the DigiSign demo request.",
+            code: error?.code,
+            status: error?.status,
+          }),
+        );
     }
     return;
   }

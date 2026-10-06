@@ -22,17 +22,21 @@ import {
   DEFAULT_DIGISIGN_API_BASE_URL,
   fetchSigningAccess,
   fetchSigningStatus,
+  DigiSignApiError,
   type SigningStatus,
 } from "./digisignApi";
 
+/** DigiSign production and sandbox origins accepted by default. */
 export const DIGISIGN_ALLOWED_ORIGINS = [
   "https://usedigisign.com",
   "https://usedigisign.dev",
 ] as const;
+/** Events emitted through `VerificationWebView`'s `onEvent` callback. */
 export type VerificationEventType =
   | "access-loading"
   | "access-loaded"
   | "access-error"
+  | "credit-error"
   | "status-error"
   | "loading"
   | "loaded"
@@ -46,28 +50,55 @@ export type VerificationEventType =
   | "expired"
   | "voided"
   | "do-not-trust";
+/** Payload emitted for lifecycle, error, and terminal verification events. */
 export type VerificationEvent = {
+  /** Event name. */
   type: VerificationEventType;
+  /** Human-readable error message, when the event represents a failure. */
   error?: string;
+  /** HTTP status associated with an API failure. */
+  statusCode?: number;
+  /** Stable DigiSign error code associated with an API failure. */
+  code?: string;
+  /** Latest signing status, when relevant to the event. */
   status?: SigningStatus;
 };
-export type VerificationCancelRenderProps = { onCancel: () => void };
+
+/** Props supplied to a custom cancel control. */
+export type VerificationCancelRenderProps = {
+  /** Invokes the consumer's cancellation behavior. */
+  onCancel: () => void;
+};
+
+/** Props supplied to a custom error surface. */
 export type VerificationErrorRenderProps = {
+  /** Error event that caused the surface to render. */
   error: VerificationEvent;
+  /** Retries the failed access request or reloads the WebView. */
   onRetry: () => void;
+  /** False when retrying cannot help, such as an insufficient-credit error. */
   canRetry: boolean;
 };
+
+/** Props supplied to a custom permission-denied surface. */
 export type VerificationPermissionRenderProps = {
+  /** Native permission statuses keyed by the react-native-permissions identifier. */
   permissions: Record<string, PermissionStatus>;
+  /** Re-checks and requests missing permissions. */
   onRetry: () => void;
+  /** Opens the host app's system settings page. */
   onOpenSettings: () => Promise<void>;
+  /** Whether opening system settings is appropriate for the current state. */
   canOpenSettings: boolean;
 };
+
+/** Configuration and callbacks for the DigiSign verification WebView. */
 export type VerificationWebViewProps = {
   /** Use this for an already-created DigiSign verification link. */
   url?: string;
   /** When supplied, the SDK obtains the link and polls status internally. */
   requestPublicId?: string;
+  /** Recipient public identifier used with the internal access flow. */
   recipientPublicId?: string;
   /** Short-lived session JWT. Never use a permanent API key in the app. */
   accessToken?: string;
@@ -77,16 +108,27 @@ export type VerificationWebViewProps = {
   organisationId?: string;
   /** Defaults to the sandbox API; configure the production API URL in production. */
   apiBaseUrl?: string;
+  /** Status polling interval in milliseconds; defaults to 4000. */
   pollIntervalMs?: number;
+  /** HTTPS origins allowed for the resolved WebView URL and navigation. */
   allowedOrigins?: readonly string[];
+  /** Called when the consumer's cancel control is pressed. */
   onCancel?: () => void;
+  /** Receives every SDK lifecycle, error, and terminal event. */
   onEvent?: (event: VerificationEvent) => void;
+  /** Receives each successful status poll. */
   onSigningStatus?: (status: SigningStatus) => void;
+  /** Receives the first terminal status. */
   onTerminal?: (status: SigningStatus) => void;
+  /** Receives every URL reported by the WebView navigation state. */
   onNavigationStateChange?: (url: string) => void;
+  /** Replaces the default cancel button. */
   renderCancel?: (props: VerificationCancelRenderProps) => ReactNode;
+  /** Replaces the default loading/access/WebView error surface. */
   renderError?: (props: VerificationErrorRenderProps) => ReactNode;
+  /** Replaces the default loading surface. */
   renderLoading?: () => ReactNode;
+  /** Replaces the default permission-denied surface. */
   renderPermissionDenied?: (props: VerificationPermissionRenderProps) => ReactNode;
 };
 
@@ -141,9 +183,13 @@ function DefaultError({ error, onRetry, canRetry }: VerificationErrorRenderProps
   return (
     <View style={styles.statusCard}>
       <Text style={styles.errorIcon}>!</Text>
-      <Text style={styles.statusTitle}>Verification could not be loaded</Text>
+      <Text style={styles.statusTitle}>
+        {error.type === "credit-error"
+          ? "Verification unavailable"
+          : "Verification could not be loaded"}
+      </Text>
       <Text style={styles.statusMessage}>{error.error || "Please try again."}</Text>
-      {canRetry ? (
+      {canRetry && error.type !== "credit-error" ? (
         <Pressable accessibilityRole="button" onPress={onRetry} style={styles.retryButton}>
           <Text style={styles.retryText}>Try again</Text>
         </Pressable>
@@ -189,6 +235,12 @@ function DefaultPermissionDenied({
   );
 }
 
+/**
+ * Renders a DigiSign verification flow inside a controlled React Native WebView.
+ *
+ * Provide `url` for a previously resolved verification URL, or provide all
+ * internal-flow identifiers to have the SDK fetch the URL and poll status.
+ */
 export function VerificationWebView({
   url,
   requestPublicId,
@@ -315,14 +367,18 @@ export function VerificationWebView({
       setResolvedUrl(access.link);
       emit({ type: "access-loaded" });
     } catch (accessError) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
+        const apiError = accessError instanceof DigiSignApiError ? accessError : undefined;
         reportError({
-          type: "access-error",
+          type: apiError?.isInsufficientCredits ? "credit-error" : "access-error",
           error:
             accessError instanceof Error
               ? accessError.message
               : "Unable to fetch the verification link.",
+          statusCode: apiError?.status,
+          code: apiError?.code,
         });
+      }
     }
   }, [
     accessToken,
@@ -400,13 +456,18 @@ export function VerificationWebView({
       } catch (statusError) {
         if (!cancelled) {
           failureCount += 1;
-          emit({
-            type: "status-error",
+          const apiError = statusError instanceof DigiSignApiError ? statusError : undefined;
+          const event: VerificationEvent = {
+            type: apiError?.isInsufficientCredits ? "credit-error" : "status-error",
             error:
               statusError instanceof Error
                 ? statusError.message
                 : "Unable to fetch signing status.",
-          });
+            statusCode: apiError?.status,
+            code: apiError?.code,
+          };
+          emit(event);
+          if (event.type === "credit-error") return;
           const retryDelay = Math.min(
             Math.max(3000, pollIntervalMs) * 2 ** Math.min(failureCount - 1, 4),
             60000,
@@ -524,9 +585,13 @@ export function VerificationWebView({
       {error && !permissionDenied ? (
         <View style={styles.overlay}>
           {renderError ? (
-            renderError({ error, onRetry: retry, canRetry: true })
+            renderError({
+              error,
+              onRetry: retry,
+              canRetry: error.type !== "credit-error",
+            })
           ) : (
-            <DefaultError error={error} onRetry={retry} canRetry />
+            <DefaultError error={error} onRetry={retry} canRetry={error.type !== "credit-error"} />
           )}
         </View>
       ) : null}

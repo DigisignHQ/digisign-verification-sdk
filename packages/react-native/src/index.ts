@@ -7,5 +7,5 @@ export type {
   VerificationPermissionRenderProps,
   VerificationWebViewProps,
 } from "./VerificationWebView";
-export { DEFAULT_DIGISIGN_API_BASE_URL } from "./digisignApi";
-export type { SigningAccess, SigningStatus } from "./digisignApi";
+export { DEFAULT_DIGISIGN_API_BASE_URL, DigiSignApiError } from "./digisignApi";
+export type { SigningAccess, SigningRecipient, SigningStatus } from "./digisignApi";

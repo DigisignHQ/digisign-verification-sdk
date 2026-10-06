@@ -1,21 +1,59 @@
 {
-  "name": "@digisign/react-native-verification-sdk",
-  "version": "0.1.0",
-  "description": "DigiSign verification WebView with controlled camera and microphone permissions",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "name": "@usedigisign/react-native-verification-sdk",
+  "version": "0.0.1",
+  "description": "DigiSign verification WebView SDK for React Native and Expo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DigisignHQ/digisign-verification-sdk.git",
+    "directory": "packages/react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/DigisignHQ/digisign-verification-sdk/issues"
+  },
+  "homepage": "https://github.com/DigisignHQ/digisign-verification-sdk#readme",
+  "keywords": [
+    "react-native",
+    "expo",
+    "webview",
+    "identity-verification",
+    "kyc",
+    "digisign"
+  ],
+  "main": "./lib/commonjs/index.js",
+  "module": "./lib/module/index.js",
+  "types": "./lib/typescript/module/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
-    }
+      "import": {
+        "types": "./lib/typescript/module/index.d.ts",
+        "default": "./lib/module/index.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/index.d.ts",
+        "default": "./lib/commonjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
   },
-  "files": ["dist", "src"],
+  "files": ["lib", "src"],
+  "sideEffects": false,
   "scripts": {
-    "build": "tsc",
+    "build": "bob build",
+    "prepare": "bob build",
     "typecheck": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      ["commonjs", { "sourceMaps": true }],
+      ["module", { "esm": true, "sourceMaps": true }],
+      ["typescript", { "project": "tsconfig.json" }]
+    ]
   },
   "peerDependencies": {
     "react": ">=19.2.3",
@@ -25,7 +63,11 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-builder-bob": "^0.43.1",
     "react-native-permissions": "^5.6.2",
+    "react-native-webview": "13.15.0",
     "typescript": "^5.9.2"
   }
 }

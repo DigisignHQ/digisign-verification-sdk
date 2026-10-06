@@ -1,5 +1,5 @@
 {
-  "name": "@digisign/verification-sdk",
+  "name": "@usedigisign/verification-sdk",
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@9.4.0",
@@ -7,12 +7,12 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "build": "pnpm --filter @digisign/react-native-verification-sdk build",
+    "build": "pnpm --filter @usedigisign/react-native-verification-sdk build",
     "demo:server": "node --env-file-if-exists=examples/demo-server/.env examples/demo-server/server.mjs",
     "dev": "pnpm --filter expo-example start",
     "format": "oxfmt --write README.md packages/react-native/src examples/expo-example",
     "format:check": "oxfmt --check README.md packages/react-native/src examples/expo-example",
-    "typecheck": "pnpm --filter @digisign/react-native-verification-sdk typecheck",
+    "typecheck": "pnpm --filter @usedigisign/react-native-verification-sdk typecheck",
     "example:android": "pnpm --filter expo-example android",
     "example:ios": "pnpm --filter expo-example ios",
     "example:start": "pnpm --filter expo-example start"

@@ -15,7 +15,7 @@ import {
   type VerificationEvent,
   type VerificationPermissionRenderProps,
   type SigningStatus,
-} from "@digisign/react-native-verification-sdk";
+} from "@usedigisign/react-native-verification-sdk";
 
 const defaultApiBaseUrl = "https://sandbox.usedigisign.dev";
 const defaultDemoServerUrl =
@@ -53,7 +53,11 @@ export default function App() {
       const response = await fetch(`${demoServerUrl}/bootstrap`, { method: "POST" });
       const payload = await response.json().catch(() => undefined);
       if (!response.ok)
-        throw new Error(payload?.error ?? `Demo server returned ${response.status}.`);
+        throw new Error(
+          payload?.code === "INSUFFICIENT_CREDITS"
+            ? `${payload.error} Please recharge the DigiSign organization and try again.`
+            : (payload?.error ?? `Demo server returned ${response.status}.`),
+        );
       setRequestPublicId(payload.requestPublicId);
       setRecipientPublicId(payload.recipientPublicId);
       setAccessToken(payload.accessToken);

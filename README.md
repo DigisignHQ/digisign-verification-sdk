@@ -4,7 +4,7 @@ React Native and Expo integration for DigiSign identity verification flows.
 
 ## Workspace
 
-- `packages/react-native` — reusable `@digisign/react-native-verification-sdk` package.
+- `packages/react-native` — reusable `@usedigisign/react-native-verification-sdk` package.
 - `examples/expo-example` — Expo SDK 57 development-build example app.
 - `docs/` — integration notes and platform requirements.
 
@@ -89,7 +89,7 @@ and `POST /v1/requests/single-use` before the SDK opens the verification link.
 ## Usage
 
 ```tsx
-import { VerificationWebView } from "@digisign/react-native-verification-sdk";
+import { VerificationWebView } from "@usedigisign/react-native-verification-sdk";
 
 <VerificationWebView
   requestPublicId={requestPublicId}
@@ -114,6 +114,70 @@ the session token through your backend or another protected session flow.
 production API base URL for production deployments. The direct `url` prop is
 also supported for integrations that already fetch the signing link.
 
+## Public API
+
+The package exports `VerificationWebView`, `DigiSignApiError`,
+`DIGISIGN_ALLOWED_ORIGINS`, and `DEFAULT_DIGISIGN_API_BASE_URL`, together with
+the TypeScript types listed below.
+
+### Constants
+
+| Constant                        | Description                                                     |
+| ------------------------------- | --------------------------------------------------------------- |
+| `DEFAULT_DIGISIGN_API_BASE_URL` | Sandbox API origin used when `apiBaseUrl` is not provided.      |
+| `DIGISIGN_ALLOWED_ORIGINS`      | Production and sandbox DigiSign Web origins allowed by default. |
+
+### `VerificationWebView` props
+
+Use exactly one flow:
+
+- Direct URL flow: provide `url`.
+- Internal access flow: provide `requestPublicId`, `recipientPublicId`,
+  `accessToken`, `workspaceId`, and `organisationId`.
+
+| Prop                      | Type                   | Description                                                      |
+| ------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| `url`                     | `string`               | Existing DigiSign verification URL.                              |
+| `requestPublicId`         | `string`               | Request ID for SDK-managed link retrieval and status polling.    |
+| `recipientPublicId`       | `string`               | Recipient ID for SDK-managed link retrieval and status polling.  |
+| `accessToken`             | `string`               | Short-lived DigiSign session JWT. Never use a permanent API key. |
+| `workspaceId`             | `string`               | Workspace public ID sent as `x-ws-identifier`.                   |
+| `organisationId`          | `string`               | Organisation public ID sent as `x-o10n-identifier`.              |
+| `apiBaseUrl`              | `string`               | DigiSign API origin. Defaults to the sandbox.                    |
+| `pollIntervalMs`          | `number`               | Status polling interval. Defaults to 4000 ms.                    |
+| `allowedOrigins`          | `readonly string[]`    | HTTPS origins allowed for the verification page.                 |
+| `onCancel`                | `() => void`           | Called by the default or custom cancel control.                  |
+| `onEvent`                 | `(event) => void`      | Receives SDK lifecycle and error events.                         |
+| `onSigningStatus`         | `(status) => void`     | Receives each successful status poll.                            |
+| `onTerminal`              | `(status) => void`     | Receives a terminal request status.                              |
+| `onNavigationStateChange` | `(url) => void`        | Receives WebView navigation URLs.                                |
+| `renderCancel`            | `(props) => ReactNode` | Replaces the default cancel button.                              |
+| `renderError`             | `(props) => ReactNode` | Replaces the default error surface.                              |
+| `renderLoading`           | `() => ReactNode`      | Replaces the default loading surface.                            |
+| `renderPermissionDenied`  | `(props) => ReactNode` | Replaces the permission surface.                                 |
+
+### Events
+
+`onEvent` receives a `VerificationEvent` with a `type` and optional `error`,
+`code`, `statusCode`, and `status` fields.
+
+| Event                                                        | Meaning                                                         |
+| ------------------------------------------------------------ | --------------------------------------------------------------- |
+| `access-loading` / `access-loaded`                           | Internal flow is fetching or has resolved the verification URL. |
+| `access-error`                                               | The internal access request failed.                             |
+| `credit-error`                                               | DigiSign returned an exhausted-credit error; retry is disabled. |
+| `loading` / `loaded`                                         | The WebView started or finished loading.                        |
+| `webview-error`                                              | The WebView failed to load or its process terminated.           |
+| `invalid-origin`                                             | The URL is outside `allowedOrigins`.                            |
+| `permission-denied`                                          | Camera or microphone permission is unavailable.                 |
+| `status-update`                                              | A status poll completed successfully.                           |
+| `status-error`                                               | A status poll failed and may be retried with backoff.           |
+| `signed`                                                     | The recipient submitted their signature.                        |
+| `completed`, `rejected`, `expired`, `voided`, `do-not-trust` | The request reached a terminal state.                           |
+
+`DigiSignApiError` exposes `status`, `code`, and `isInsufficientCredits` for
+consumers that need to classify DigiSign API failures.
+
 The component includes loading, error, retry, and cancel UI when `onCancel` is
 provided. Consumers can replace these surfaces with render props:
 
@@ -123,6 +187,7 @@ provided. Consumers can replace these surfaces with render props:
   recipientPublicId={recipientPublicId}
   accessToken={shortLivedSessionToken}
   workspaceId={workspacePublicId}
+  organisationId={organisationPublicId}
   onCancel={closeVerification}
   renderLoading={() => <YourLoadingView />}
   renderError={({ error, onRetry }) => <YourErrorView message={error.error} onRetry={onRetry} />}
@@ -137,13 +202,32 @@ provided. Consumers can replace these surfaces with render props:
 />
 ```
 
+When the DigiSign API reports an exhausted organization wallet, the SDK emits
+`{ type: "credit-error", statusCode: 402, code: "INSUFFICIENT_CREDITS" }` and
+does not retry the request or status poll. The default error surface asks the
+consumer to recharge rather than offering a retry that cannot succeed. Custom
+error renderers should branch on `error.type` or `error.code`, not on the
+message text:
+
+```tsx
+renderError={({ error }) =>
+  error.type === "credit-error" ? (
+    <YourRechargeRequiredView />
+  ) : (
+    <YourErrorView message={error.error} />
+  )}
+```
+
 When a user has permanently blocked a permission, the default permission view
 offers an **Open Settings** action. Custom permission views receive
 `canOpenSettings` and `onOpenSettings`; the SDK re-checks permissions when the
 app returns from Settings.
 
-The host app remains responsible for obtaining the DigiSign verification URL
-from the DigiSign service and deciding what to do after the verification flow
-completes. By default, the SDK allows `usedigisign.com`, `usedigisign.dev`, and
-their HTTPS subdomains. Consumers can override this with `allowedOrigins` when
-using a controlled DigiSign environment.
+In direct URL mode, the host app is responsible for obtaining the DigiSign
+verification URL. In internal access mode, the SDK obtains that URL from the
+DigiSign service using the supplied request, recipient, workspace, organisation,
+and short-lived session credentials. The host app remains responsible for
+deciding what to do after the verification flow completes. By default, the SDK
+allows `usedigisign.com`, `usedigisign.dev`, and their HTTPS subdomains.
+Consumers can override this with `allowedOrigins` when using a controlled
+DigiSign environment.
