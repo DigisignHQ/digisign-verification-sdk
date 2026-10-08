@@ -8,4 +8,10 @@ export type {
   VerificationWebViewProps,
 } from "./VerificationWebView";
 export { DEFAULT_DIGISIGN_API_BASE_URL, DigiSignApiError } from "./digisignApi";
-export type { SigningAccess, SigningRecipient, SigningStatus } from "./digisignApi";
+export type {
+  SigningAccess,
+  SigningRecipient,
+  SigningRequestDetails,
+  SigningRequestRecipient,
+  SigningStatus,
+} from "./digisignApi";

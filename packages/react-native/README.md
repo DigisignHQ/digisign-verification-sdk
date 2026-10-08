@@ -28,9 +28,12 @@ import { VerificationWebView } from "@usedigisign/react-native-verification-sdk"
 />;
 ```
 
-The SDK fetches the verification URL internally in this mode and polls the
-signing status. The `accessToken` must be a short-lived DigiSign session JWT;
-never ship a permanent API key in a mobile application.
+The SDK fetches request details internally, opens the backend-generated
+`recipients[].signing_access.link` short link, and derives signing status from
+the same response while polling. The `accessToken` must be a short-lived
+DigiSign session JWT; never ship a permanent API key in a mobile application.
+This internal flow requires the backend request-details response to include
+`recipients[].signing_access`.
 
 For an already-resolved verification URL, pass `url` instead of the internal
 access-flow credentials:

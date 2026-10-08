@@ -116,10 +116,12 @@ import { VerificationWebView } from "@usedigisign/react-native-verification-sdk"
 />;
 ```
 
-The SDK calls `POST /v1/requests/{requestPublicId}/recipients/{recipientPublicId}/signing-access`
-internally, reads the returned verification `link`, and polls
-`GET .../signing-status` every four seconds. The access token must be a
-short-lived DigiSign session JWT and `workspaceId` is sent as
+The SDK calls `GET /v1/requests/{requestPublicId}` internally, selects the
+matching recipient from `data.recipients[]`, and opens the backend-generated
+`recipient.signing_access.link` short link. It polls the same request-details
+endpoint every four seconds and derives request/recipient status from that
+response. The access token must be a short-lived DigiSign session JWT and
+`workspaceId` is sent as
 `x-ws-identifier`; `organisationId` is sent as `x-o10n-identifier`. Do not ship a permanent API key in the mobile app; obtain
 the session token through your backend or another protected session flow.
 
@@ -152,7 +154,7 @@ Use exactly one flow:
 | ------------------------- | ---------------------- | ---------------------------------------------------------------- |
 | `url`                     | `string`               | Existing DigiSign verification URL.                              |
 | `requestPublicId`         | `string`               | Request ID for SDK-managed link retrieval and status polling.    |
-| `recipientPublicId`       | `string`               | Recipient ID for SDK-managed link retrieval and status polling.  |
+| `recipientPublicId`       | `string`               | Recipient ID selected from the request-details response.         |
 | `accessToken`             | `string`               | Short-lived DigiSign session JWT. Never use a permanent API key. |
 | `workspaceId`             | `string`               | Workspace public ID sent as `x-ws-identifier`.                   |
 | `organisationId`          | `string`               | Organisation public ID sent as `x-o10n-identifier`.              |
@@ -190,6 +192,11 @@ Use exactly one flow:
 
 `DigiSignApiError` exposes `status`, `code`, and `isInsufficientCredits` for
 consumers that need to classify DigiSign API failures.
+
+The internal access flow requires a backend release that includes
+`recipients[].signing_access` in `GET /v1/requests/{publicId}`. Older releases
+that expose only the deprecated recipient signing endpoints are not compatible
+with this SDK flow.
 
 The component includes loading, error, retry, and cancel UI when `onCancel` is
 provided. Consumers can replace these surfaces with render props:
