@@ -20,8 +20,8 @@ import {
 import { WebView, type WebView as WebViewType } from "react-native-webview";
 import {
   DEFAULT_DIGISIGN_API_BASE_URL,
-  fetchSigningAccess,
-  fetchSigningStatus,
+  fetchSigningRequest,
+  toSigningStatus,
   DigiSignApiError,
   type SigningStatus,
 } from "./digisignApi";
@@ -96,15 +96,15 @@ export type VerificationPermissionRenderProps = {
 export type VerificationWebViewProps = {
   /** Use this for an already-created DigiSign verification link. */
   url?: string;
-  /** When supplied, the SDK obtains the link and polls status internally. */
+  /** Required with the other internal-flow props; identifies the request. */
   requestPublicId?: string;
-  /** Recipient public identifier used with the internal access flow. */
+  /** Required with the other internal-flow props; identifies the recipient. */
   recipientPublicId?: string;
-  /** Short-lived session JWT. Never use a permanent API key in the app. */
+  /** Required in internal mode; short-lived session JWT, never a permanent API key. */
   accessToken?: string;
-  /** Workspace public identifier sent as x-ws-identifier. */
+  /** Required in internal mode; sent as x-ws-identifier. */
   workspaceId?: string;
-  /** Organisation public identifier sent as x-o10n-identifier. */
+  /** Required in internal mode; sent as x-o10n-identifier. */
   organisationId?: string;
   /** Defaults to the sandbox API; configure the production API URL in production. */
   apiBaseUrl?: string;
@@ -353,26 +353,34 @@ export function VerificationWebView({
     setIsLoading(true);
     emit({ type: "access-loading" });
     try {
-      const access = await fetchSigningAccess({
+      const request = await fetchSigningRequest({
         apiBaseUrl,
         requestPublicId: requestPublicId!,
-        recipientPublicId: recipientPublicId!,
         accessToken: accessToken!,
         workspaceId: workspaceId!,
         organisationId: organisationId!,
         signal: controller.signal,
       });
-      if (!originAllowed(access.link, allowedOrigins))
+      const recipient = request.recipients.find(({ public_id }) => public_id === recipientPublicId);
+      const link = recipient?.signing_access?.link;
+      if (!link) {
+        throw new DigiSignApiError(
+          "DigiSign did not return a verification link for this recipient.",
+          { code: "SIGNING_ACCESS_UNAVAILABLE" },
+        );
+      }
+      if (!originAllowed(link, allowedOrigins))
         throw new Error("DigiSign returned a verification link outside the allowed origins.");
-      setResolvedUrl(access.link);
+      setResolvedUrl(link);
       emit({ type: "access-loaded" });
     } catch (accessError) {
       if (!controller.signal.aborted) {
         const apiError = accessError instanceof DigiSignApiError ? accessError : undefined;
         reportError({
           type: apiError?.isInsufficientCredits ? "credit-error" : "access-error",
-          error:
-            accessError instanceof Error
+          error: apiError?.isLegacySigningContract
+            ? "This DigiSign backend does not support the current request-details signing flow."
+            : accessError instanceof Error
               ? accessError.message
               : "Unable to fetch the verification link.",
           statusCode: apiError?.status,
@@ -423,16 +431,17 @@ export function VerificationWebView({
     let failureCount = 0;
     let previousRecipientStatus: string | undefined;
     let previousRequestStatus: string | undefined;
+    let terminalReported = false;
     const poll = async () => {
       try {
-        const status = await fetchSigningStatus({
+        const request = await fetchSigningRequest({
           apiBaseUrl,
           requestPublicId: requestPublicId!,
-          recipientPublicId: recipientPublicId!,
           accessToken: accessToken!,
           workspaceId: workspaceId!,
           organisationId: organisationId!,
         });
+        const status = toSigningStatus(request, recipientPublicId!);
         if (cancelled) return;
         onSigningStatus?.(status);
         emit({ type: "status-update", status });
@@ -450,7 +459,10 @@ export function VerificationWebView({
         previousRecipientStatus = recipientStatus;
         previousRequestStatus = normalized;
         failureCount = 0;
-        if (terminalStatus(status)) onTerminal?.(status);
+        if (terminalStatus(status) && !terminalReported) {
+          terminalReported = true;
+          onTerminal?.(status);
+        }
         if (!terminalStatus(status))
           timeout = setTimeout(() => void poll(), Math.max(3000, pollIntervalMs));
       } catch (statusError) {
@@ -459,8 +471,9 @@ export function VerificationWebView({
           const apiError = statusError instanceof DigiSignApiError ? statusError : undefined;
           const event: VerificationEvent = {
             type: apiError?.isInsufficientCredits ? "credit-error" : "status-error",
-            error:
-              statusError instanceof Error
+            error: apiError?.isLegacySigningContract
+              ? "This DigiSign backend does not support the current request-details signing flow."
+              : statusError instanceof Error
                 ? statusError.message
                 : "Unable to fetch signing status.",
             statusCode: apiError?.status,

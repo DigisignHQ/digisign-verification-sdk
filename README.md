@@ -101,6 +101,29 @@ and `POST /v1/requests/single-use` before the SDK opens the verification link.
 
 ## Usage
 
+### Recommended: pass the backend-generated short link
+
+Have your server call `GET /v1/requests/{publicId}`, select the recipient's
+`signing_access.link`, and pass that short link to the mobile app. Then render
+the SDK with `url`. This is the recommended integration because the mobile app
+does not need a DigiSign API session token:
+
+```tsx
+import { VerificationWebView } from "@usedigisign/react-native-verification-sdk";
+
+<VerificationWebView url={verificationShortLink} onCancel={() => navigation.goBack()} />;
+```
+
+The short link is generated and protected by the DigiSign backend. Treat it as
+temporary verification-session data, do not persist it longer than necessary,
+and obtain a fresh link when it expires.
+
+### Optional: let the SDK fetch the short link
+
+The SDK can also call the DigiSign request-details endpoint itself. This mode
+requires a short-lived session JWT in `accessToken` and all of the other
+internal-flow identifiers:
+
 ```tsx
 import { VerificationWebView } from "@usedigisign/react-native-verification-sdk";
 
@@ -116,16 +139,18 @@ import { VerificationWebView } from "@usedigisign/react-native-verification-sdk"
 />;
 ```
 
-The SDK calls `POST /v1/requests/{requestPublicId}/recipients/{recipientPublicId}/signing-access`
-internally, reads the returned verification `link`, and polls
-`GET .../signing-status` every four seconds. The access token must be a
-short-lived DigiSign session JWT and `workspaceId` is sent as
+The SDK calls `GET /v1/requests/{requestPublicId}` internally, selects the
+matching recipient from `data.recipients[]`, and opens the backend-generated
+`recipient.signing_access.link` short link. It polls the same request-details
+endpoint every four seconds and derives request/recipient status from that
+response. The access token must be a short-lived DigiSign session JWT and
+`workspaceId` is sent as
 `x-ws-identifier`; `organisationId` is sent as `x-o10n-identifier`. Do not ship a permanent API key in the mobile app; obtain
 the session token through your backend or another protected session flow.
 
 `apiBaseUrl` defaults to `https://sandbox.usedigisign.dev`. Configure the
-production API base URL for production deployments. The direct `url` prop is
-also supported for integrations that already fetch the signing link.
+production API base URL for production deployments. The recommended direct
+`url` flow does not require `accessToken`.
 
 ## Public API
 
@@ -144,30 +169,37 @@ the TypeScript types listed below.
 
 Use exactly one flow:
 
-- Direct URL flow: provide `url`.
-- Internal access flow: provide `requestPublicId`, `recipientPublicId`,
+- Direct short-link flow (recommended): provide `url` containing the
+  backend-generated `signing_access.link`. Do not provide an `accessToken`.
+- SDK-managed flow: provide all five of `requestPublicId`, `recipientPublicId`,
   `accessToken`, `workspaceId`, and `organisationId`.
 
-| Prop                      | Type                   | Description                                                      |
-| ------------------------- | ---------------------- | ---------------------------------------------------------------- |
-| `url`                     | `string`               | Existing DigiSign verification URL.                              |
-| `requestPublicId`         | `string`               | Request ID for SDK-managed link retrieval and status polling.    |
-| `recipientPublicId`       | `string`               | Recipient ID for SDK-managed link retrieval and status polling.  |
-| `accessToken`             | `string`               | Short-lived DigiSign session JWT. Never use a permanent API key. |
-| `workspaceId`             | `string`               | Workspace public ID sent as `x-ws-identifier`.                   |
-| `organisationId`          | `string`               | Organisation public ID sent as `x-o10n-identifier`.              |
-| `apiBaseUrl`              | `string`               | DigiSign API origin. Defaults to the sandbox.                    |
-| `pollIntervalMs`          | `number`               | Status polling interval. Defaults to 4000 ms.                    |
-| `allowedOrigins`          | `readonly string[]`    | HTTPS origins allowed for the verification page.                 |
-| `onCancel`                | `() => void`           | Called by the default or custom cancel control.                  |
-| `onEvent`                 | `(event) => void`      | Receives SDK lifecycle and error events.                         |
-| `onSigningStatus`         | `(status) => void`     | Receives each successful status poll.                            |
-| `onTerminal`              | `(status) => void`     | Receives a terminal request status.                              |
-| `onNavigationStateChange` | `(url) => void`        | Receives WebView navigation URLs.                                |
-| `renderCancel`            | `(props) => ReactNode` | Replaces the default cancel button.                              |
-| `renderError`             | `(props) => ReactNode` | Replaces the default error surface.                              |
-| `renderLoading`           | `() => ReactNode`      | Replaces the default loading surface.                            |
-| `renderPermissionDenied`  | `(props) => ReactNode` | Replaces the permission surface.                                 |
+`accessToken` is required for SDK-managed mode. It is a short-lived DigiSign
+session JWT used to authenticate the SDK's `GET /v1/requests/{publicId}` call;
+it is not the backend API key and is not needed in direct URL mode. Obtain it
+from your protected backend/session flow, never from a permanent mobile-app
+secret.
+
+| Prop                      | Type                   | Description                                                   |
+| ------------------------- | ---------------------- | ------------------------------------------------------------- |
+| `url`                     | `string`               | Existing DigiSign verification URL.                           |
+| `requestPublicId`         | `string`               | Request ID for SDK-managed link retrieval and status polling. |
+| `recipientPublicId`       | `string`               | Recipient ID selected from the request-details response.      |
+| `accessToken`             | `string`               | Required in SDK-managed mode; short-lived session JWT.        |
+| `workspaceId`             | `string`               | Required in SDK-managed mode; sent as `x-ws-identifier`.      |
+| `organisationId`          | `string`               | Required in SDK-managed mode; sent as `x-o10n-identifier`.    |
+| `apiBaseUrl`              | `string`               | DigiSign API origin. Defaults to the sandbox.                 |
+| `pollIntervalMs`          | `number`               | Status polling interval. Defaults to 4000 ms.                 |
+| `allowedOrigins`          | `readonly string[]`    | HTTPS origins allowed for the verification page.              |
+| `onCancel`                | `() => void`           | Called by the default or custom cancel control.               |
+| `onEvent`                 | `(event) => void`      | Receives SDK lifecycle and error events.                      |
+| `onSigningStatus`         | `(status) => void`     | Receives each successful status poll.                         |
+| `onTerminal`              | `(status) => void`     | Receives a terminal request status.                           |
+| `onNavigationStateChange` | `(url) => void`        | Receives WebView navigation URLs.                             |
+| `renderCancel`            | `(props) => ReactNode` | Replaces the default cancel button.                           |
+| `renderError`             | `(props) => ReactNode` | Replaces the default error surface.                           |
+| `renderLoading`           | `() => ReactNode`      | Replaces the default loading surface.                         |
+| `renderPermissionDenied`  | `(props) => ReactNode` | Replaces the permission surface.                              |
 
 ### Events
 
@@ -190,6 +222,11 @@ Use exactly one flow:
 
 `DigiSignApiError` exposes `status`, `code`, and `isInsufficientCredits` for
 consumers that need to classify DigiSign API failures.
+
+The internal access flow requires a backend release that includes
+`recipients[].signing_access` in `GET /v1/requests/{publicId}`. Older releases
+that expose only the deprecated recipient signing endpoints are not compatible
+with this SDK flow.
 
 The component includes loading, error, retry, and cancel UI when `onCancel` is
 provided. Consumers can replace these surfaces with render props:
