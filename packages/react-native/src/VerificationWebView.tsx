@@ -96,15 +96,15 @@ export type VerificationPermissionRenderProps = {
 export type VerificationWebViewProps = {
   /** Use this for an already-created DigiSign verification link. */
   url?: string;
-  /** When supplied, the SDK obtains the link and polls status internally. */
+  /** Required with the other internal-flow props; identifies the request. */
   requestPublicId?: string;
-  /** Recipient public identifier used with the internal access flow. */
+  /** Required with the other internal-flow props; identifies the recipient. */
   recipientPublicId?: string;
-  /** Short-lived session JWT. Never use a permanent API key in the app. */
+  /** Required in internal mode; short-lived session JWT, never a permanent API key. */
   accessToken?: string;
-  /** Workspace public identifier sent as x-ws-identifier. */
+  /** Required in internal mode; sent as x-ws-identifier. */
   workspaceId?: string;
-  /** Organisation public identifier sent as x-o10n-identifier. */
+  /** Required in internal mode; sent as x-o10n-identifier. */
   organisationId?: string;
   /** Defaults to the sandbox API; configure the production API URL in production. */
   apiBaseUrl?: string;
